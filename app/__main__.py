@@ -1,4 +1,5 @@
 import logging
+import sentry_sdk
 from asyncio import sleep
 
 from telethon import TelegramClient, events, types
@@ -8,10 +9,16 @@ from telethon.tl.types import ChannelParticipantAdmin, ChannelParticipantCreator
 
 from app import config, club
 
-logging.basicConfig(format='[%(levelname) 5s/%(asctime)s] %(name)s: %(message)s',
-                    level=logging.WARNING)
+if config.SENTRY_DSN:
+    sentry_sdk.init(config.SENTRY_DSN, traces_sample_rate=0.5)
 
 logger = logging.getLogger(__name__)
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - %(funcName)s - %(name)s - %(message)s",
+)
+
 
 client = TelegramClient(StringSession(
     config.SESSION_STRING),
