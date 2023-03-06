@@ -2,6 +2,7 @@ import logging
 from dataclasses import dataclass, fields
 
 import aiohttp
+import requests as requests
 
 from config import JWT_TOKEN
 
@@ -55,6 +56,20 @@ async def get_member_by_telegram_id(telegram_id):
             ) as response:
                 return await response.json()
     except Exception as e:
+        logger.exception(e)
+        return
+
+
+def sync_get_member_by_telegram_id(telegram_id):
+    """To prevent API overload"""
+    try:
+        response = requests.get(
+            f"{VAS3K_ENDPOINT}{USER}{BY_TELEGRAM_ID}/{telegram_id}.json",
+            params={"service_token": JWT_TOKEN}
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
         logger.exception(e)
         return
 

@@ -1,12 +1,13 @@
 import logging
+from time import sleep
+
 import sentry_sdk
-from asyncio import sleep
+from redis.client import Redis
 
 from telethon import TelegramClient, events, types
 from telethon.sessions import StringSession
 from telethon.tl.custom import Message
 from telethon.tl.types import ChannelParticipantAdmin, ChannelParticipantCreator
-
 from app import config, club
 
 if config.SENTRY_DSN:
@@ -19,10 +20,16 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(funcName)s - %(name)s - %(message)s",
 )
 
-
 client = TelegramClient(StringSession(
     config.SESSION_STRING),
     config.API_ID, config.API_HASH).start()
+
+redis_client = Redis.from_url(config.REDIS_URL)
+
+
+def is_chat_cleaning(chat_id):
+    result = redis_client.get(f'cleaning:{chat_id}')
+    return result is not None
 
 
 @client.on(events.NewMessage(pattern='!kickall'))
@@ -37,6 +44,9 @@ async def kick_all_non_club(event: Message):
     if event.sender_id not in admin_ids:
         return await event.reply('Команда доступна только админам')
 
+    if is_chat_cleaning(event.chat_id):
+        return await event.reply('Процесс уже идет')
+
     chat_permissions = await client.get_permissions(chat, await client.get_me())
 
     if not chat_permissions.is_admin:
@@ -46,6 +56,7 @@ async def kick_all_non_club(event: Message):
         return await event.reply('Дайте мне права банить пользователей, ну')
 
     counter = 0
+    redis_client.set(f'cleaning:{chat.id}', 1)
     async for member in client.iter_participants(chat):
         if member.is_self:
             continue
@@ -56,8 +67,8 @@ async def kick_all_non_club(event: Message):
         if isinstance(member.participant, (ChannelParticipantAdmin, ChannelParticipantCreator)):
             continue
 
-        club_user = await club.user_by_telegram_id(member.id)
-        await sleep(1)
+        club_user = await club.sync_get_member_by_telegram_id(member.id)
+        sleep(1)
         if club_user:
             continue
 
@@ -77,6 +88,7 @@ async def kick_all_non_club(event: Message):
             f'{result}: {member.first_name or "%без_имени%"}, {member.last_name or "%без_фамилии%"} {username}')
         counter += 1
 
+    redis_client.delete(f'cleaning:{chat.id}')
     await event.reply(f'Готово. Кикнуто всего: {counter}')
     # await client.kick_participant(chat, 'me')
 
@@ -84,4 +96,5 @@ async def kick_all_non_club(event: Message):
 try:
     client.run_until_disconnected()
 finally:
+    redis_client.close()
     client.disconnect()
