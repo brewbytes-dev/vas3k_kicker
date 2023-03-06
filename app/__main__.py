@@ -57,7 +57,7 @@ async def kick_all_non_club(event: Message):
         redis_client.delete(f'cleaning:{event.chat_id}')
 
 
-@client.on(events.NewMessage(pattern='!checkall'))
+@client.on(events.NewMessage(pattern='!stop'))
 async def send_stop(event: Message):
     redis_client.setex(f'stop:{event.chat_id}', 60 * MINUTE, 1)
 
