@@ -67,7 +67,6 @@ def sync_get_member_by_telegram_id(telegram_id):
             f"{VAS3K_ENDPOINT}{USER}{BY_TELEGRAM_ID}/{telegram_id}.json",
             params={"service_token": JWT_TOKEN}
         )
-        response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         logger.exception(e)
