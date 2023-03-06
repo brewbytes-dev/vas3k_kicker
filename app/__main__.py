@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from time import sleep
 
@@ -102,7 +101,6 @@ async def _kick_all_non_club(event: Message):
             f'{result}: {member.first_name or "%без_имени%"}, {member.last_name or "%без_фамилии%"} {username}')
         counter += 1
 
-    await asyncio.sleep(60)
     redis_client.delete(f'cleaning:{event.chat_id}')
     await event.reply(f'Готово. Кикнуто всего: {counter}')
     await client.kick_participant(chat, 'me')
