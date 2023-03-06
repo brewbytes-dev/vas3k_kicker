@@ -100,5 +100,6 @@ async def kick_all_non_club(event: Message):
 try:
     client.run_until_disconnected()
 finally:
+    redis_client.flushdb()
     redis_client.close()
     client.disconnect()
