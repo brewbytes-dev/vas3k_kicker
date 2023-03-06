@@ -26,6 +26,9 @@ client = TelegramClient(StringSession(
     config.API_ID, config.API_HASH).start()
 
 redis_client = Redis.from_url(config.REDIS_URL)
+redis_client.flushall()
+
+SECOND, MINUTE = 1, 60
 
 
 def is_chat_cleaning(chat_id):
@@ -35,6 +38,14 @@ def is_chat_cleaning(chat_id):
 
 @client.on(events.NewMessage(pattern='!kickall'))
 async def kick_all_non_club(event: Message):
+    try:
+        return await _kick_all_non_club(event)
+    except Exception as e:
+        logger.exception(e)
+        redis_client.delete(f'cleaning:{event.chat_id}')
+
+
+async def _kick_all_non_club(event: Message):
     if not event.is_group:
         return
 
@@ -57,7 +68,7 @@ async def kick_all_non_club(event: Message):
         return await event.reply('Дайте мне права банить пользователей, ну')
 
     counter = 0
-    redis_client.set(f'cleaning:{event.chat_id}', 1)
+    redis_client.setex(f'cleaning:{event.chat_id}', 60*MINUTE, 1)
     assert is_chat_cleaning(event.chat_id)
     await event.reply('Начинаем вышибать людей не из клуба...')
     async for member in client.iter_participants(chat):
@@ -100,6 +111,5 @@ async def kick_all_non_club(event: Message):
 try:
     client.run_until_disconnected()
 finally:
-    redis_client.flushall()
     redis_client.close()
     client.disconnect()
