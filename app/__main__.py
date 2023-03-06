@@ -35,37 +35,99 @@ def is_chat_cleaning(chat_id):
     return result is not None
 
 
+def is_chat_checking(chat_id):
+    result = redis_client.get(f'checking:{chat_id}')
+    return result is not None
+
+
 @client.on(events.NewMessage(pattern='!kickall'))
 async def kick_all_non_club(event: Message):
     try:
-        return await _kick_all_non_club(event)
+        check = await pre_checks(event)
+        if check:
+            return await _kick_all_non_club(event)
     except Exception as e:
         logger.exception(e)
         redis_client.delete(f'cleaning:{event.chat_id}')
 
 
-async def _kick_all_non_club(event: Message):
+@client.on(events.NewMessage(pattern='!checkall'))
+async def check_all_non_club(event: Message):
+    try:
+        check = await pre_checks(event)
+        if check:
+            return await _check_all_non_club(event)
+    except Exception as e:
+        logger.exception(e)
+        redis_client.delete(f'checking:{event.chat_id}')
+
+
+async def pre_checks(event: Message):
     if not event.is_group:
         return
 
     if is_chat_cleaning(event.chat_id):
-        return await event.reply('Процесс уже идет')
+        await event.reply('Процесс уже идет')
+        return
 
     chat = await client.get_entity(event.chat_id)
     admins = await client.get_participants(chat, filter=types.ChannelParticipantsAdmins)
     admin_ids = [admin.id for admin in admins]
 
     if event.sender_id not in admin_ids:
-        return await event.reply('Команда доступна только админам')
+        await event.reply('Команда доступна только админам')
+        return
 
     chat_permissions = await client.get_permissions(chat, await client.get_me())
 
     if not chat_permissions.is_admin:
-        return await event.reply('Сначала сделайте меня админом')
+        await event.reply('Сначала сделайте меня админом')
+        return
 
     if not chat_permissions.participant.admin_rights.ban_users:
-        return await event.reply('Дайте мне права банить пользователей, ну')
+        await event.reply('Дайте мне права банить пользователей, ну')
+        return
 
+    return True
+
+
+async def _check_all_non_club(event: Message):
+    if is_chat_checking(event.chat_id):
+        await event.reply('Проверка уже была запущена')
+        return
+
+    counter = 0
+    redis_client.setex(f'checking:{event.chat_id}', 60*MINUTE, 1)
+    assert is_chat_checking(event.chat_id)
+    chat = await client.get_entity(event.chat_id)
+    await event.reply('Начинаем проверять людей не из клуба...')
+
+    async for member in client.iter_participants(chat):
+        if member.is_self:
+            continue
+
+        if member.bot:
+            continue
+
+        if isinstance(member.participant, (ChannelParticipantAdmin, ChannelParticipantCreator)):
+            continue
+
+        club_user = club.user_by_telegram_id(member.id)
+        sleep(1)
+        if club_user:
+            continue
+
+        result = "Этот не из клуба"
+        username = "@" + member.username if member.username else ""
+        await event.reply(
+            f'{result}: {member.first_name or "%без_имени%"}, {member.last_name or "%без_фамилии%"} {username}')
+        counter += 1
+
+    await event.reply(f'Готово. Всего не из клуба: {counter}')
+
+
+async def _kick_all_non_club(event: Message):
+    chat = await client.get_entity(event.chat_id)
     counter = 0
     redis_client.setex(f'cleaning:{event.chat_id}', 60*MINUTE, 1)
     assert is_chat_cleaning(event.chat_id)
