@@ -3,11 +3,12 @@ from time import sleep
 
 import sentry_sdk
 from redis.client import Redis
-
 from telethon import TelegramClient, events, types
+from telethon.errors import FloodWaitError
 from telethon.sessions import StringSession
 from telethon.tl.custom import Message
 from telethon.tl.types import ChannelParticipantAdmin, ChannelParticipantCreator
+
 from app import config, club
 
 if config.SENTRY_DSN:
@@ -40,6 +41,11 @@ def is_chat_checking(chat_id):
     return result is not None
 
 
+def is_asked_stop(chat_id):
+    result = redis_client.get(f'stop:{chat_id}')
+    return result is not None
+
+
 @client.on(events.NewMessage(pattern='!kickall'))
 async def kick_all_non_club(event: Message):
     try:
@@ -49,6 +55,11 @@ async def kick_all_non_club(event: Message):
     except Exception as e:
         logger.exception(e)
         redis_client.delete(f'cleaning:{event.chat_id}')
+
+
+@client.on(events.NewMessage(pattern='!checkall'))
+async def send_stop(event: Message):
+    redis_client.setex(f'stop:{event.chat_id}', 60 * MINUTE, 1)
 
 
 @client.on(events.NewMessage(pattern='!checkall'))
@@ -67,7 +78,7 @@ async def pre_checks(event: Message):
         return
 
     if is_chat_cleaning(event.chat_id):
-        await event.reply('Процесс уже идет')
+        await safe_reply(event, 'Процесс уже идет')
         return
 
     chat = await client.get_entity(event.chat_id)
@@ -75,33 +86,23 @@ async def pre_checks(event: Message):
     admin_ids = [admin.id for admin in admins]
 
     if event.sender_id not in admin_ids:
-        await event.reply('Команда доступна только админам')
+        await safe_reply(event, 'Команда доступна только админам')
         return
 
     chat_permissions = await client.get_permissions(chat, await client.get_me())
 
     if not chat_permissions.is_admin:
-        await event.reply('Сначала сделайте меня админом')
+        await safe_reply(event, 'Сначала сделайте меня админом')
         return
 
     if not chat_permissions.participant.admin_rights.ban_users:
-        await event.reply('Дайте мне права банить пользователей, ну')
+        await safe_reply(event, 'Дайте мне права банить пользователей, ну')
         return
 
     return True
 
 
-async def _check_all_non_club(event: Message):
-    if is_chat_checking(event.chat_id):
-        await event.reply('Проверка уже была запущена')
-        return
-
-    counter = 0
-    redis_client.setex(f'checking:{event.chat_id}', 60*MINUTE, 1)
-    assert is_chat_checking(event.chat_id)
-    chat = await client.get_entity(event.chat_id)
-    await event.reply('Начинаем проверять людей не из клуба...')
-
+async def get_non_club(chat):
     async for member in client.iter_participants(chat):
         if member.is_self:
             continue
@@ -117,35 +118,58 @@ async def _check_all_non_club(event: Message):
         if club_user:
             continue
 
+        yield member
+
+
+async def _check_all_non_club(event: Message):
+    if is_chat_checking(event.chat_id):
+        await safe_reply(event, 'Проверка уже была запущена')
+        return
+
+    counter = 0
+    redis_client.setex(f'checking:{event.chat_id}', 60 * MINUTE, 1)
+    assert is_chat_checking(event.chat_id)
+    chat = await client.get_entity(event.chat_id)
+    await safe_reply(event, 'Начинаем проверять людей не из клуба...')
+
+    async for member in get_non_club(chat):
+        if is_asked_stop(event.chat_id):
+            redis_client.delete(f'stop:{event.chat_id}')
+            redis_client.delete(f'checking:{event.chat_id}')
+            return safe_reply(event, "Остановлено")
+
         result = "Этот не из клуба"
         username = "@" + member.username if member.username else ""
-        await event.reply(
-            f'{result}: {member.first_name or "%без_имени%"}, {member.last_name or "%без_фамилии%"} {username}')
+
+        await safe_reply(event,
+                         f'{result}: {member.first_name or "%без_имени%"}, {member.last_name or "%без_фамилии%"} '
+                         f'{username}')
         counter += 1
 
-    await event.reply(f'Готово. Всего не из клуба: {counter}')
+    await safe_reply(event, f'Готово. Всего не из клуба: {counter}\n\n'
+                            f'P.S. конечно, они могут быть из клуба, но не привязали профиль, но мне то откуда знать!\n'
+                            f'Короче, не одобряю такое!')
+
+
+async def safe_reply(event, message):
+    try:
+        await event.reply(message)
+    except FloodWaitError as e:
+        sleep(e.seconds)
+        await event.reply(message)
 
 
 async def _kick_all_non_club(event: Message):
     chat = await client.get_entity(event.chat_id)
     counter = 0
-    redis_client.setex(f'cleaning:{event.chat_id}', 60*MINUTE, 1)
+    redis_client.setex(f'cleaning:{event.chat_id}', 60 * MINUTE, 1)
     assert is_chat_cleaning(event.chat_id)
-    await event.reply('Начинаем вышибать людей не из клуба...')
-    async for member in client.iter_participants(chat):
-        if member.is_self:
-            continue
-
-        if member.bot:
-            continue
-
-        if isinstance(member.participant, (ChannelParticipantAdmin, ChannelParticipantCreator)):
-            continue
-
-        club_user = club.user_by_telegram_id(member.id)
-        sleep(1)
-        if club_user:
-            continue
+    await safe_reply(event, 'Начинаем вышибать людей не из клуба...')
+    async for member in get_non_club(chat):
+        if is_asked_stop(event.chat_id):
+            redis_client.delete(f'stop:{event.chat_id}')
+            redis_client.delete(f'cleaning:{event.chat_id}')
+            return safe_reply(event, "Остановлено")
 
         permissions = await client.get_permissions(chat, member)
         if permissions.is_banned:
@@ -159,12 +183,13 @@ async def _kick_all_non_club(event: Message):
                 continue
 
         username = "@" + member.username if member.username else ""
-        await event.reply(
-            f'{result}: {member.first_name or "%без_имени%"}, {member.last_name or "%без_фамилии%"} {username}')
+        await safe_reply(event,
+                         f'{result}: {member.first_name or "%без_имени%"}, {member.last_name or "%без_фамилии%"} '
+                         f'{username}')
         counter += 1
 
     redis_client.delete(f'cleaning:{event.chat_id}')
-    await event.reply(f'Готово. Кикнуто всего: {counter}')
+    await safe_reply(event, f'Готово. Кикнуто всего: {counter}')
     await client.kick_participant(chat, 'me')
 
 
