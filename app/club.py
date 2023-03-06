@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass, fields
 
 import aiohttp
-import requests as requests
+import requests
 
 from config import JWT_TOKEN
 

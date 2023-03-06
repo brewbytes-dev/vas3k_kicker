@@ -4,3 +4,4 @@ aiohttp==3.8.4
 aioredis==2.0.1
 sentry-sdk==1.15.0
 redis==4.3.4
+requests~=2.28.2
