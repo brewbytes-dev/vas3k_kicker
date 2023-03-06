@@ -80,7 +80,7 @@ async def _kick_all_non_club(event: Message):
         if isinstance(member.participant, (ChannelParticipantAdmin, ChannelParticipantCreator)):
             continue
 
-        club_user = await club.sync_get_member_by_telegram_id(member.id)
+        club_user = await club.user_by_telegram_id(member.id)
         sleep(1)
         if club_user:
             continue

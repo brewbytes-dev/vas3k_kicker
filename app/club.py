@@ -74,8 +74,8 @@ def sync_get_member_by_telegram_id(telegram_id):
         return
 
 
-async def user_by_telegram_id(telegram_id):
-    club_profile = await get_member_by_telegram_id(telegram_id)
+def user_by_telegram_id(telegram_id):
+    club_profile = sync_get_member_by_telegram_id(telegram_id)
     if not club_profile:
         return
 
