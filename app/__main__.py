@@ -58,7 +58,7 @@ async def kick_all_non_club(event: Message):
 
     counter = 0
     redis_client.set(f'cleaning:{event.chat_id}', 1)
-    assert is_chat_cleaning(chat.id) is True
+    assert is_chat_cleaning(event.chat_id)
     await event.reply('Начинаем вышибать людей не из клуба...')
     async for member in client.iter_participants(chat):
         if member.is_self:
@@ -94,7 +94,7 @@ async def kick_all_non_club(event: Message):
     await asyncio.sleep(60)
     redis_client.delete(f'cleaning:{event.chat_id}')
     await event.reply(f'Готово. Кикнуто всего: {counter}')
-    # await client.kick_participant(chat, 'me')
+    await client.kick_participant(chat, 'me')
 
 
 try:
