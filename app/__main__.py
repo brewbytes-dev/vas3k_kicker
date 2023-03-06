@@ -17,7 +17,7 @@ if config.SENTRY_DSN:
 logger = logging.getLogger(__name__)
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(funcName)s - %(name)s - %(message)s",
 )
 
@@ -38,15 +38,15 @@ async def kick_all_non_club(event: Message):
     if not event.is_group:
         return
 
+    if is_chat_cleaning(event.chat_id):
+        return await event.reply('Процесс уже идет')
+
     chat = await client.get_entity(event.chat_id)
     admins = await client.get_participants(chat, filter=types.ChannelParticipantsAdmins)
     admin_ids = [admin.id for admin in admins]
 
     if event.sender_id not in admin_ids:
         return await event.reply('Команда доступна только админам')
-
-    if is_chat_cleaning(event.chat_id):
-        return await event.reply('Процесс уже идет')
 
     chat_permissions = await client.get_permissions(chat, await client.get_me())
 
@@ -57,7 +57,9 @@ async def kick_all_non_club(event: Message):
         return await event.reply('Дайте мне права банить пользователей, ну')
 
     counter = 0
-    redis_client.set(f'cleaning:{chat.id}', 1)
+    redis_client.set(f'cleaning:{event.chat_id}', 1)
+    assert is_chat_cleaning(chat.id) is True
+    await event.reply('Начинаем вышибать людей не из клуба...')
     async for member in client.iter_participants(chat):
         if member.is_self:
             continue
@@ -90,7 +92,7 @@ async def kick_all_non_club(event: Message):
         counter += 1
 
     await asyncio.sleep(60)
-    redis_client.delete(f'cleaning:{chat.id}')
+    redis_client.delete(f'cleaning:{event.chat_id}')
     await event.reply(f'Готово. Кикнуто всего: {counter}')
     # await client.kick_participant(chat, 'me')
 
