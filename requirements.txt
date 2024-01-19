@@ -1,4 +1,4 @@
-telethon==1.27.0
+telethon==1.33.1
 python-dotenv==0.21.1
 aiohttp==3.8.4
 aioredis==2.0.1

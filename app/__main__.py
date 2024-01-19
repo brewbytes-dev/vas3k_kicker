@@ -21,9 +21,9 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(funcName)s - %(name)s - %(message)s",
 )
 
-client = TelegramClient(StringSession(
-    config.SESSION_STRING),
-    config.API_ID, config.API_HASH).start()
+client = TelegramClient(StringSession(config.SESSION_STRING),
+                        config.API_ID, config.API_HASH)
+client.start()
 
 redis_client = Redis.from_url(config.REDIS_URL)
 redis_client.flushall()
@@ -194,7 +194,8 @@ async def _kick_all_non_club(event: Message):
 
 
 try:
-    client.run_until_disconnected()
+    # client.run_until_disconnected()
+    pass
 finally:
     redis_client.close()
     client.disconnect()
