@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from time import sleep
 
 import sentry_sdk
@@ -23,7 +24,6 @@ logging.basicConfig(
 
 client = TelegramClient(StringSession(config.SESSION_STRING),
                         config.API_ID, config.API_HASH)
-client.start()
 
 redis_client = Redis.from_url(config.REDIS_URL)
 redis_client.flushall()
@@ -95,7 +95,7 @@ async def pre_checks(event: Message):
         await safe_reply(event, 'Сначала сделайте меня админом')
         return
 
-    if not chat_permissions.participant.admin_rights.ban_users:
+    if not chat_permissions.ban_users:
         await safe_reply(event, 'Дайте мне права банить пользователей, ну')
         return
 
@@ -192,10 +192,13 @@ async def _kick_all_non_club(event: Message):
     await safe_reply(event, f'Готово. Кикнуто всего: {counter}')
     await client.kick_participant(chat, 'me')
 
+async def main():
+    while True:
+        await asyncio.sleep(1)
 
-try:
-    # client.run_until_disconnected()
-    pass
-finally:
-    redis_client.close()
-    client.disconnect()
+with client:
+    try:
+        client.loop.run_until_complete(main())
+    finally:
+        redis_client.close()
+
